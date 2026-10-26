@@ -1,26 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generador de contraseñas</title>
+<style>
+  body { font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; background: #0d1117; color: #e6edf3; }
+  h1 { font-size: 22px; }
+  label { display: block; margin: 10px 0; font-size: 16px; }
+  input[type=range] { width: 100%; }
+  button { padding: 12px 16px; font-size: 16px; border: 0; border-radius: 8px; background: #238636; color: white; margin-top: 12px; }
+  button.sec { background: #30363d; }
+  #resultado { font-family: monospace; font-size: 18px; word-break: break-all; background: #161b22; padding: 12px; border-radius: 8px; min-height: 28px; margin-top: 16px; }
+  #barra { height: 8px; border-radius: 4px; background: #30363d; margin-top: 12px; }
+  #nivel { height: 8px; border-radius: 4px; width: 0; }
+</style>
+</head>
+<body>
 <h1>Generador de contraseñas</h1>
 
-<label for="largo">Longitud:</label>
-<input type="number" id="largo" value="16" min="8" max="64">
-<button onclick="generar()">Generar</button>
+<label>Longitud: <b id="valor">16</b>
+  <input type="range" id="largo" min="8" max="64" value="16"
+         oninput="document.getElementById('valor').textContent = this.value">
+</label>
 
-<p id="resultado"></p>
+<label><input type="checkbox" id="mayus" checked> Mayúsculas (A-Z)</label>
+<label><input type="checkbox" id="minus" checked> Minúsculas (a-z)</label>
+<label><input type="checkbox" id="nums" checked> Números (0-9)</label>
+<label><input type="checkbox" id="simbolos" checked> Símbolos (!@#$...)</label>
+<label><input type="checkbox" id="confusos"> Evitar caracteres confusos (0 O 1 l I)</label>
+
+<button onclick="generar()">Generar</button>
+<button class="sec" id="btnCopiar" onclick="copiar()">Copiar</button>
+
+<div id="resultado"></div>
+<div id="barra"><div id="nivel"></div></div>
+<p id="fuerza"></p>
 
 <script>
-function generar() {
-  const letras = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
-  let largo = parseInt(document.getElementById("largo").value);
+const juegos = {
+  mayus: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  minus: "abcdefghijklmnopqrstuvwxyz",
+  nums: "0123456789",
+  simbolos: "!@#$%^&*()-_=+?"
+};
+let ultima = "";
 
-  if (isNaN(largo) || largo < 8 || largo > 64) {
-    document.getElementById("resultado").textContent = "Elige un número entre 8 y 64";
+function generar() {
+  let pool = "";
+  for (const id in juegos) {
+    if (document.getElementById(id).checked) pool += juegos[id];
+  }
+  if (document.getElementById("confusos").checked) {
+    pool = pool.replace(/[0O1lI]/g, "");
+  }
+  if (!pool) {
+    ultima = "";
+    document.getElementById("resultado").textContent = "Marca al menos una opción";
     return;
   }
-
+  const largo = parseInt(document.getElementById("largo").value);
   const numeros = crypto.getRandomValues(new Uint32Array(largo));
   let clave = "";
   for (const n of numeros) {
-    clave += letras[n % letras.length];
+    clave += pool[n % pool.length];
   }
+  ultima = clave;
   document.getElementById("resultado").textContent = clave;
+  fortaleza(largo, pool.length);
+}
+
+function fortaleza(largo, tam) {
+  const bits = largo * Math.log2(tam);
+  let texto, color, pct;
+  if (bits < 40)      { texto = "Débil";      color = "#da3633"; pct = 25; }
+  else if (bits < 60) { texto = "Media";      color = "#d29922"; pct = 50; }
+  else if (bits < 80) { texto = "Fuerte";     color = "#2ea043"; pct = 75; }
+  else                { texto = "Muy fuerte"; color = "#3fb950"; pct = 100; }
+  const nivel = document.getElementById("nivel");
+  nivel.style.width = pct + "%";
+  nivel.style.background = color;
+  document.getElementById("fuerza").textContent =
+    "Fortaleza: " + texto + " (" + Math.round(bits) + " bits)";
+}
+
+async function copiar() {
+  if (!ultima) return;
+  const btn = document.getElementById("btnCopiar");
+  try {
+    await navigator.clipboard.writeText(ultima);
+    btn.textContent = "¡Copiado!";
+  } catch (e) {
+    btn.textContent = "No se pudo copiar";
+  }
+  setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
 }
 </script>
+</body>
+</html>
