@@ -1,0 +1,15 @@
+<h1>Generador de contraseñas</h1>
+<button onclick="generar()">Generar</button>
+<p id="resultado"></p>
+
+<script>
+function generar() {
+  const letras = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
+  const numeros = crypto.getRandomValues(new Uint32Array(16));
+  let clave = "";
+  for (const n of numeros) {
+    clave += letras[n % letras.length];
+  }
+  document.getElementById("resultado").textContent = clave;
+}
+</script>
