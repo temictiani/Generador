@@ -1,11 +1,22 @@
 <h1>Generador de contraseñas</h1>
+
+<label for="largo">Longitud:</label>
+<input type="number" id="largo" value="16" min="8" max="64">
 <button onclick="generar()">Generar</button>
+
 <p id="resultado"></p>
 
 <script>
 function generar() {
   const letras = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
-  const numeros = crypto.getRandomValues(new Uint32Array(16));
+  let largo = parseInt(document.getElementById("largo").value);
+
+  if (isNaN(largo) || largo < 8 || largo > 64) {
+    document.getElementById("resultado").textContent = "Elige un número entre 8 y 64";
+    return;
+  }
+
+  const numeros = crypto.getRandomValues(new Uint32Array(largo));
   let clave = "";
   for (const n of numeros) {
     clave += letras[n % letras.length];
