@@ -122,14 +122,3 @@ Esta herramienta es **defensiva y educativa**. Está pensada para ayudarte a cre
 
 HTML5 · CSS3 · JavaScript (vanilla) · Web Crypto API · GitHub Pages
 
----
-
-## 📄 Licencia
-
-Distribuido bajo licencia [MIT](LICENSE).
-
----
-
-## 👤 Autor
-
-**TU NOMBRE** — [@TU-USUARIO](https://github.com/TU-USUARIO)
