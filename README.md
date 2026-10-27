@@ -2,14 +2,6 @@
 
 Herramienta web ligera para **generar contraseñas seguras** y **analizar la fortaleza** de las que ya usas. Funciona 100 % en tu navegador, sin servidores, sin dependencias y sin guardar nada.
 
-👉 **Demo en vivo:** `https://TU-USUARIO.github.io/Generador/`
-
-> Reemplaza `TU-USUARIO` por tu nombre de usuario de GitHub.
-
-![Captura de la app](docs/captura.png)
-
----
-
 ## ✨ Características
 
 **Generador**
