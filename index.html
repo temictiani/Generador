@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generador y analizador de contraseñas</title>
+<style>
+  body { font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; background: #0d1117; color: #e6edf3; }
+  h1 { font-size: 22px; }
+  h2 { font-size: 18px; margin-top: 32px; border-top: 1px solid #30363d; padding-top: 20px; }
+  label { display: block; margin: 10px 0; font-size: 16px; }
+  input[type=range] { width: 100%; }
+  input[type=password], input[type=text] { width: 100%; box-sizing: border-box; padding: 12px; font-size: 16px; background: #161b22; color: #e6edf3; border: 1px solid #30363d; border-radius: 8px; }
+  button { padding: 12px 16px; font-size: 16px; border: 0; border-radius: 8px; background: #238636; color: white; margin-top: 12px; }
+  button.sec { background: #30363d; }
+  #resultado { font-family: monospace; font-size: 18px; word-break: break-all; background: #161b22; padding: 12px; border-radius: 8px; min-height: 28px; margin-top: 16px; }
+  .barra { height: 8px; border-radius: 4px; background: #30363d; margin-top: 12px; }
+  .nivel { height: 8px; border-radius: 4px; width: 0; }
+  ul { list-style: none; padding: 0; }
+  li { margin: 8px 0; font-size: 15px; }
+  .nota { font-size: 13px; color: #8b949e; }
+</style>
+</head>
+<body>
+<h1>Contraseñas</h1>
+
+<h2>Generar</h2>
+
+<label>Longitud: <b id="valor">16</b>
+  <input type="range" id="largo" min="8" max="64" value="16"
+         oninput="document.getElementById('valor').textContent = this.value">
+</label>
+
+<label><input type="checkbox" id="mayus" checked> Mayúsculas (A-Z)</label>
+<label><input type="checkbox" id="minus" checked> Minúsculas (a-z)</label>
+<label><input type="checkbox" id="nums" checked> Números (0-9)</label>
+<label><input type="checkbox" id="simbolos" checked> Símbolos (!@#$...)</label>
+<label><input type="checkbox" id="confusos"> Evitar caracteres confusos (0 O 1 l I)</label>
+
+<button onclick="generar()">Generar</button>
+<button class="sec" id="btnCopiar" onclick="copiar()">Copiar</button>
+<button class="sec" onclick="analizarGenerada()">Analizarla</button>
+
+<div id="resultado"></div>
+<div class="barra"><div class="nivel" id="nivel"></div></div>
+<p id="fuerza"></p>
+
+<h2>Analizar una contraseña</h2>
+
+<input type="password" id="prueba" placeholder="Escribe una contraseña" autocomplete="off" oninput="analizar()">
+<label><input type="checkbox" onchange="document.getElementById('prueba').type = this.checked ? 'text' : 'password'"> Mostrar contraseña</label>
+
+<div class="barra"><div class="nivel" id="nivel2"></div></div>
+<p id="veredicto"></p>
+<ul id="lista"></ul>
+
+<button class="sec" onclick="comprobarFiltracion()">Comprobar filtraciones</button>
+<p id="filtracion" aria-live="polite"></p>
+
+<p class="nota">El análisis se hace en tu navegador y la contraseña no se guarda en ningún sitio. Si pulsas «Comprobar filtraciones», se envían solo 5 caracteres de un hash (nunca la contraseña) a la API de Have I Been Pwned. El tiempo estimado supone 10¹⁰ intentos por segundo contra un hash rápido; es un escenario pesimista. Aun así, es mejor probar contraseñas parecidas a las tuyas y no las reales.</p>
+
+<script>
+const juegos = {
+  mayus: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  minus: "abcdefghijklmnopqrstuvwxyz",
+  nums: "0123456789",
+  simbolos: "!@#$%^&*()-_=+?"
+};
+let ultima = "";
+
+const COMUNES = ["123456","12345678","123456789","1234567890","12345","1234","111111","000000","123123","password","password1","qwerty","qwerty123","abc123","admin","letmein","welcome","iloveyou","dragon","monkey","football","contrasena","contraseña","hola123","123qwe","654321"];
+const SECUENCIAS = ["abcdefghijklmnopqrstuvwxyz","0123456789","qwertyuiop","asdfghjkl","zxcvbnm"];
+const LEET = { "@": "a", "4": "a", "3": "e", "1": "i", "!": "i", "0": "o", "$": "s", "5": "s", "7": "t" };
+
+function pintar(id, pct, color) {
+  const el = document.getElementById(id);
+  el.style.width = pct + "%";
+  el.style.background = color;
+}
+
+function nivelDe(bits) {
+  if (bits < 28) return { texto: "Muy débil",  color: "#da3633", pct: 15 };
+  if (bits < 36) return { texto: "Débil",      color: "#da3633", pct: 30 };
+  if (bits < 60) return { texto: "Media",      color: "#d29922", pct: 55 };
+  if (bits < 80) return { texto: "Fuerte",     color: "#2ea043", pct: 80 };
+  return            { texto: "Muy fuerte", color: "#3fb950", pct: 100 };
+}
+
+// Entero aleatorio en [0, max) sin sesgo de módulo (muestreo por rechazo)
+function aleatorio(max) {
+  const limite = Math.floor(0x100000000 / max) * max;
+  const buf = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(buf);
+  } while (buf[0] >= limite);
+  return buf[0] % max;
+}
+
+function generar() {
+  let pool = "";
+  for (const id in juegos) {
+    if (document.getElementById(id).checked) pool += juegos[id];
+  }
+  if (document.getElementById("confusos").checked) {
+    pool = pool.replace(/[0O1lI]/g, "");
+  }
+  if (!pool) {
+    ultima = "";
+    document.getElementById("resultado").textContent = "Marca al menos una opción";
+    pintar("nivel", 0, "#30363d");
+    document.getElementById("fuerza").textContent = "";
+    return;
+  }
+  const largo = parseInt(document.getElementById("largo").value);
+  let clave = "";
+  for (let i = 0; i < largo; i++) {
+    clave += pool[aleatorio(pool.length)];
+  }
+  ultima = clave;
+  document.getElementById("resultado").textContent = clave;
+  const bits = largo * Math.log2(pool.length);
+  const nv = nivelDe(bits);
+  pintar("nivel", nv.pct, nv.color);
+  document.getElementById("fuerza").textContent =
+    "Fortaleza: " + nv.texto + " (" + Math.round(bits) + " bits)";
+}
+
+async function copiar() {
+  if (!ultima) return;
+  const btn = document.getElementById("btnCopiar");
+  try {
+    await navigator.clipboard.writeText(ultima);
+    btn.textContent = "¡Copiado!";
+  } catch (e) {
+    btn.textContent = "No se pudo copiar";
+  }
+  setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
+}
+
+function analizarGenerada() {
+  if (!ultima) return;
+  document.getElementById("prueba").value = ultima;
+  analizar();
+}
+
+function tieneSecuencia(texto) {
+  for (const base of SECUENCIAS) {
+    const inversa = base.split("").reverse().join("");
+    for (let i = 0; i + 4 <= texto.length; i++) {
+      const trozo = texto.slice(i, i + 4);
+      if (base.includes(trozo) || inversa.includes(trozo)) return true;
+    }
+  }
+  return false;
+}
+
+function tiempoEstimado(bits) {
+  const seg = Math.pow(2, bits) / 2 / 1e10;
+  if (seg < 1) return "menos de un segundo";
+  if (seg < 60) return Math.round(seg) + " segundos";
+  if (seg < 3600) return Math.round(seg / 60) + " minutos";
+  if (seg < 86400) return Math.round(seg / 3600) + " horas";
+  const dias = seg / 86400;
+  if (dias < 365) return Math.round(dias) + " días";
+  const anios = dias / 365;
+  if (anios < 1000) return Math.round(anios) + " años";
+  if (anios < 1e6) return "miles de años";
+  if (anios < 1e9) return "millones de años";
+  return "miles de millones de años";
+}
+
+function analizar() {
+  const pw = document.getElementById("prueba").value;
+  const lista = document.getElementById("lista");
+  const veredicto = document.getElementById("veredicto");
+  document.getElementById("filtracion").textContent = "";
+
+  if (!pw) {
+    lista.innerHTML = "";
+    veredicto.textContent = "";
+    pintar("nivel2", 0, "#30363d");
+    return;
+  }
+
+  const lower = pw.toLowerCase();
+  const normal = lower.replace(/[@4310!$57]/g, c => LEET[c]);
+  const tiene = {
+    mayus: /[A-Z]/.test(pw),
+    minus: /[a-z]/.test(pw),
+    nums: /[0-9]/.test(pw),
+    simb: /[^A-Za-z0-9]/.test(pw)
+  };
+  const pool = (tiene.mayus ? 26 : 0) + (tiene.minus ? 26 : 0) + (tiene.nums ? 10 : 0) + (tiene.simb ? 33 : 0);
+  const sinFinal = lower.replace(/[0-9!@#$%^&*._-]+$/, "");
+  const normalSinFinal = normal.replace(/[0-9!@#$%^&*._-]+$/, "");
+  const comun = COMUNES.includes(lower) || COMUNES.includes(sinFinal) ||
+                COMUNES.includes(normal) || COMUNES.includes(normalSinFinal);
+  const repetido = /(.)\1\1/.test(pw);
+  const secuencia = tieneSecuencia(lower);
+
+  let bits = pw.length * Math.log2(pool);
+  if (comun) bits = Math.min(bits, 10);
+  if (repetido) bits -= 8;
+  if (secuencia) bits -= 8;
+  bits = Math.max(bits, 0);
+
+  const nv = nivelDe(bits);
+  pintar("nivel2", nv.pct, nv.color);
+  veredicto.textContent = "Nivel: " + nv.texto + ". Tiempo estimado para adivinarla por fuerza bruta: " + tiempoEstimado(bits) + ".";
+
+  const checks = [
+    [pw.length >= 12, "Tiene 12 caracteres o más"],
+    [tiene.mayus, "Incluye mayúsculas"],
+    [tiene.minus, "Incluye minúsculas"],
+    [tiene.nums, "Incluye números"],
+    [tiene.simb, "Incluye símbolos"],
+    [!comun, "No es una contraseña muy común"],
+    [!repetido, "Sin 3 caracteres iguales seguidos"],
+    [!secuencia, "Sin secuencias como 1234 o abcd"]
+  ];
+
+  lista.innerHTML = "";
+  for (const [ok, texto] of checks) {
+    const li = document.createElement("li");
+    li.textContent = (ok ? "✓ " : "✗ ") + texto;
+    li.style.color = ok ? "#3fb950" : "#f85149";
+    lista.appendChild(li);
+  }
+}
+
+// Have I Been Pwned con k-anonymity: solo se envían 5 caracteres del hash SHA-1
+async function filtrada(pw) {
+  const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(pw));
+  const hex = [...new Uint8Array(buf)]
+    .map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+  const r = await fetch("https://api.pwnedpasswords.com/range/" + hex.slice(0, 5));
+  if (!r.ok) throw new Error("HIBP " + r.status);
+  const linea = (await r.text()).split("\n").find(l => l.startsWith(hex.slice(5)));
+  return linea ? parseInt(linea.split(":")[1]) : 0;
+}
+
+async function comprobarFiltracion() {
+  const pw = document.getElementById("prueba").value;
+  const out = document.getElementById("filtracion");
+  if (!pw) {
+    out.textContent = "Escribe primero una contraseña.";
+    return;
+  }
+  out.textContent = "Consultando...";
+  try {
+    const n = await filtrada(pw);
+    out.textContent = n
+      ? "⚠ Aparece en " + n.toLocaleString("es") + " filtraciones. No la uses."
+      : "✓ No aparece en filtraciones conocidas.";
+  } catch (e) {
+    out.textContent = "No se pudo consultar. Revisa tu conexión.";
+  }
+}
+</script>
+</body>
+</html>
