@@ -53,7 +53,11 @@
 <div class="barra"><div class="nivel" id="nivel2"></div></div>
 <p id="veredicto"></p>
 <ul id="lista"></ul>
-<p class="nota">El análisis se hace en tu navegador. La contraseña no se envía ni se guarda en ningún sitio. Aun así, es mejor probar contraseñas parecidas a las tuyas y no las reales.</p>
+
+<button class="sec" onclick="comprobarFiltracion()">Comprobar filtraciones</button>
+<p id="filtracion" aria-live="polite"></p>
+
+<p class="nota">El análisis se hace en tu navegador y la contraseña no se guarda en ningún sitio. Si pulsas «Comprobar filtraciones», se envían solo 5 caracteres de un hash (nunca la contraseña) a la API de Have I Been Pwned. El tiempo estimado supone 10¹⁰ intentos por segundo contra un hash rápido; es un escenario pesimista. Aun así, es mejor probar contraseñas parecidas a las tuyas y no las reales.</p>
 
 <script>
 const juegos = {
@@ -66,6 +70,7 @@ let ultima = "";
 
 const COMUNES = ["123456","12345678","123456789","1234567890","12345","1234","111111","000000","123123","password","password1","qwerty","qwerty123","abc123","admin","letmein","welcome","iloveyou","dragon","monkey","football","contrasena","contraseña","hola123","123qwe","654321"];
 const SECUENCIAS = ["abcdefghijklmnopqrstuvwxyz","0123456789","qwertyuiop","asdfghjkl","zxcvbnm"];
+const LEET = { "@": "a", "4": "a", "3": "e", "1": "i", "!": "i", "0": "o", "$": "s", "5": "s", "7": "t" };
 
 function pintar(id, pct, color) {
   const el = document.getElementById(id);
@@ -81,6 +86,16 @@ function nivelDe(bits) {
   return            { texto: "Muy fuerte", color: "#3fb950", pct: 100 };
 }
 
+// Entero aleatorio en [0, max) sin sesgo de módulo (muestreo por rechazo)
+function aleatorio(max) {
+  const limite = Math.floor(0x100000000 / max) * max;
+  const buf = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(buf);
+  } while (buf[0] >= limite);
+  return buf[0] % max;
+}
+
 function generar() {
   let pool = "";
   for (const id in juegos) {
@@ -92,13 +107,14 @@ function generar() {
   if (!pool) {
     ultima = "";
     document.getElementById("resultado").textContent = "Marca al menos una opción";
+    pintar("nivel", 0, "#30363d");
+    document.getElementById("fuerza").textContent = "";
     return;
   }
   const largo = parseInt(document.getElementById("largo").value);
-  const numeros = crypto.getRandomValues(new Uint32Array(largo));
   let clave = "";
-  for (const n of numeros) {
-    clave += pool[n % pool.length];
+  for (let i = 0; i < largo; i++) {
+    clave += pool[aleatorio(pool.length)];
   }
   ultima = clave;
   document.getElementById("resultado").textContent = clave;
@@ -157,6 +173,7 @@ function analizar() {
   const pw = document.getElementById("prueba").value;
   const lista = document.getElementById("lista");
   const veredicto = document.getElementById("veredicto");
+  document.getElementById("filtracion").textContent = "";
 
   if (!pw) {
     lista.innerHTML = "";
@@ -166,6 +183,7 @@ function analizar() {
   }
 
   const lower = pw.toLowerCase();
+  const normal = lower.replace(/[@4310!$57]/g, c => LEET[c]);
   const tiene = {
     mayus: /[A-Z]/.test(pw),
     minus: /[a-z]/.test(pw),
@@ -174,7 +192,9 @@ function analizar() {
   };
   const pool = (tiene.mayus ? 26 : 0) + (tiene.minus ? 26 : 0) + (tiene.nums ? 10 : 0) + (tiene.simb ? 33 : 0);
   const sinFinal = lower.replace(/[0-9!@#$%^&*._-]+$/, "");
-  const comun = COMUNES.includes(lower) || COMUNES.includes(sinFinal);
+  const normalSinFinal = normal.replace(/[0-9!@#$%^&*._-]+$/, "");
+  const comun = COMUNES.includes(lower) || COMUNES.includes(sinFinal) ||
+                COMUNES.includes(normal) || COMUNES.includes(normalSinFinal);
   const repetido = /(.)\1\1/.test(pw);
   const secuencia = tieneSecuencia(lower);
 
@@ -205,6 +225,35 @@ function analizar() {
     li.textContent = (ok ? "✓ " : "✗ ") + texto;
     li.style.color = ok ? "#3fb950" : "#f85149";
     lista.appendChild(li);
+  }
+}
+
+// Have I Been Pwned con k-anonymity: solo se envían 5 caracteres del hash SHA-1
+async function filtrada(pw) {
+  const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(pw));
+  const hex = [...new Uint8Array(buf)]
+    .map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+  const r = await fetch("https://api.pwnedpasswords.com/range/" + hex.slice(0, 5));
+  if (!r.ok) throw new Error("HIBP " + r.status);
+  const linea = (await r.text()).split("\n").find(l => l.startsWith(hex.slice(5)));
+  return linea ? parseInt(linea.split(":")[1]) : 0;
+}
+
+async function comprobarFiltracion() {
+  const pw = document.getElementById("prueba").value;
+  const out = document.getElementById("filtracion");
+  if (!pw) {
+    out.textContent = "Escribe primero una contraseña.";
+    return;
+  }
+  out.textContent = "Consultando...";
+  try {
+    const n = await filtrada(pw);
+    out.textContent = n
+      ? "⚠ Aparece en " + n.toLocaleString("es") + " filtraciones. No la uses."
+      : "✓ No aparece en filtraciones conocidas.";
+  } catch (e) {
+    out.textContent = "No se pudo consultar. Revisa tu conexión.";
   }
 }
 </script>
